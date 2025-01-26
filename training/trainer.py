@@ -10,10 +10,9 @@ from metrics.metrics import compute_exact_match, compute_f1
 
 class QATrainer(Trainer):
     """
-    Custom trainer class for Question Answering tasks, extending HuggingFace's Trainer.
-    Implements custom metric computation for QA evaluation.
+    Custom Trainer for Question Answering that handles multiple gold answers during evaluation.
     """
-
+    
     def __init__(
         self,
         model: Any = None,
@@ -25,8 +24,7 @@ class QATrainer(Trainer):
         **kwargs,
     ):
         """
-        We override __init__ to pass compute_metrics=self.compute_metrics
-        so that Hugging Face's Trainer will call our custom method.
+        Initialize the QATrainer with a custom compute_metrics.
         """
         super().__init__(
             model=model,
@@ -35,62 +33,67 @@ class QATrainer(Trainer):
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             tokenizer=tokenizer,
-            compute_metrics=self.compute_metrics,  # Critical line!
+            compute_metrics=self.compute_metrics,  # Assign custom compute_metrics
             **kwargs,
         )
-
+    
     def compute_metrics(self, eval_pred: EvalPrediction) -> Dict[str, float]:
         """
-        Compute evaluation metrics (Exact Match and F1 score) for QA predictions.
+        Compute EM and F1 by comparing predictions against all gold answers.
 
         Args:
-            eval_pred (EvalPrediction): 
-                - predicitons: (start_logits, end_logits)
-                - label_ids: (start_positions, end_positions)
+            eval_pred (EvalPrediction): Predictions and label_ids.
 
         Returns:
-            Dict[str, float]: Dictionary containing evaluation metrics:
-                - 'eval_exact_match': Average exact match score
-                - 'eval_f1': Average F1 score
+            Dict[str, float]: EM and F1 scores.
         """
         # Unpack predictions and labels
-        predictions, labels = eval_pred
-        start_logits, end_logits = predictions
-        start_positions, end_positions = labels
+        start_logits, end_logits = eval_pred.predictions
+        start_positions, end_positions = eval_pred.label_ids
 
-        # Convert logits to argmax predictions
+        # Convert logits to predicted start/end positions
         start_preds = np.argmax(start_logits, axis=1)
         end_preds = np.argmax(end_logits, axis=1)
 
-        exact_match_scores: List[int] = []
-        f1_scores: List[float] = []
+        exact_matches = []
+        f1_scores = []
 
-        # Go through each example to compute EM and F1
         for i in range(len(start_preds)):
-            # Predicted text
-            pred_text = self.processing_class.decode(
-                self.eval_dataset[i]["input_ids"][start_preds[i] : end_preds[i] + 1],
-                skip_special_tokens=True
-            )
-            # Ground truth text
-            true_text = self.processing_class.decode(
-                self.eval_dataset[i]["input_ids"][start_positions[i] : end_positions[i] + 1],
-                skip_special_tokens=True
-            )
+            example = self.eval_dataset[i]
+            input_ids = example["input_ids"]
 
-            # Calculate Exact Match and F1 for each example
-            exact_match = compute_exact_match(pred_text, true_text)
-            f1 = compute_f1(pred_text, true_text)
+            # Decode predicted span
+            pred_start = int(start_preds[i])
+            pred_end = int(end_preds[i])
+            if pred_start > pred_end:
+                pred_end = pred_start  # Ensure valid span
 
-            exact_match_scores.append(exact_match)
+            pred_tokens = input_ids[pred_start:pred_end+1]
+            pred_text = self.processing_class.decode(pred_tokens, skip_special_tokens=True)
+
+            # Retrieve all gold answers for this example
+            # Assuming 'answers' field is retained in the eval_dataset
+            if "answers" in example and len(example["answers"]["text"]) > 0:
+                gold_texts = example["answers"]["text"]
+            else:
+                # Unanswerable question
+                gold_texts = [""]
+
+            # Compute EM and F1 for all gold answers and take the maximum
+            em = max(compute_exact_match(pred_text, gt) for gt in gold_texts)
+            f1 = max(compute_f1(pred_text, gt) for gt in gold_texts)
+
+            exact_matches.append(em)
             f1_scores.append(f1)
 
-        # Return the average metrics
-        return {
-            "eval_exact_match": 100 * float(np.mean(exact_match_scores)),
-            "eval_f1": 100 * float(np.mean(f1_scores))
-        }
+        # Calculate average metrics
+        avg_em = 100.0 * np.mean(exact_matches)
+        avg_f1 = 100.0 * np.mean(f1_scores)
 
+        return {
+            "exact_match": avg_em,
+            "f1": avg_f1
+        }
 
 def get_trainer(
     model: Any,
@@ -103,14 +106,14 @@ def get_trainer(
     Initialize and configure a QATrainer instance with the specified parameters.
 
     Args:
-        model: The model to train (usually a HuggingFace transformer model)
-        tokenizer: Tokenizer instance for processing text
-        train_dataset: Dataset for training
-        eval_dataset: Dataset for evaluation
-        config (Dict[str, Any]): Configuration dictionary containing training parameters
+        model: The model to train (usually a HuggingFace transformer model).
+        tokenizer: Tokenizer instance for processing text.
+        train_dataset: Dataset for training.
+        eval_dataset: Dataset for evaluation.
+        config (Dict[str, Any]): Configuration dictionary containing training parameters.
 
     Returns:
-        QATrainer: Configured trainer instance ready for training
+        QATrainer: Configured trainer instance ready for training.
     """
     # Initialize Weights & Biases
     wandb.login(key=config['wandb']['API_TOKEN'])
@@ -134,8 +137,8 @@ def get_trainer(
         weight_decay=config["training"]["weight_decay"],
         warmup_ratio=config["training"]["warmup_ratio"],
 
-        # if use cuda
-        fp16=config["training"]["fp16"],
+        # Use mixed precision if specified
+        # fp16=config["training"]["fp16"],
         
         # Logging
         report_to=["wandb"],
@@ -155,26 +158,25 @@ def get_trainer(
         metric_for_best_model="eval_f1",
         greater_is_better=True,
         
-        # Seed
+        # Seed for reproducibility
         seed=config["training"]["seed"],
     )
 
     # Data collator for dynamic padding
     data_collator = DataCollatorWithPadding(tokenizer)
 
-    # early_stopping_callback = EarlyStoppingCallback(
-    #     early_stopping_patience=config["training"]["early_stopping_patience"],  
-    #     early_stopping_threshold=config["training"]["early_stopping_threshold"] 
-    # )
-    # Initialize our custom QATrainer (which has compute_metrics built-in)
+    # Initialize the custom QATrainer
     trainer = QATrainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=train_dataset,   # Single-span training dataset
+        eval_dataset=eval_dataset,     # Multi-span evaluation dataset
         tokenizer=tokenizer,
-        # callbacks=[early_stopping_callback]
+        # callbacks=[EarlyStoppingCallback(
+        #     early_stopping_patience=config["training"]["early_stopping_patience"],
+        #     early_stopping_threshold=config["training"]["early_stopping_threshold"]
+        # )]
     )
 
     return trainer

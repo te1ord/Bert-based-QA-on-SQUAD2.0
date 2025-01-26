@@ -65,12 +65,13 @@ def main() -> None:
     train_dataset = SquadDataset(
         squad["train"], 
         tokenizer, 
-        config["training"]["max_length"],
+        max_length=config["data"]["max_length"],
+        is_training=True,
     )
     eval_dataset = SquadDataset(
-        squad["validation"].select(range(20)), 
+        squad["validation"],#.select(range(100)), 
         tokenizer, 
-        config["training"]["max_length"],
+        max_length=config["data"]["max_length"],
     )
 
     # Load model

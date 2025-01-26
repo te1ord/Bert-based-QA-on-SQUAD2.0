@@ -1,12 +1,13 @@
 from torch.utils.data import Dataset
 from datasets import load_dataset
 from transformers import DefaultDataCollator, PreTrainedTokenizer
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, Optional
 import torch
+import numpy as np
 
 class SquadDataset(Dataset):
     """
-    Enhanced PyTorch Dataset for SQuAD with batched preprocessing.
+    Enhanced PyTorch Dataset for SQuAD with batched preprocessing and multi-answer handling.
     
     Attributes:
         tokenizer (PreTrainedTokenizer): Tokenizer for processing text
@@ -18,7 +19,8 @@ class SquadDataset(Dataset):
     def __init__(self, 
                  dataset: Any,
                  tokenizer: PreTrainedTokenizer,
-                 max_length: int = 384) -> None:
+                 max_length: int = 384,
+                 is_training: bool = True) -> None:
         """
         Initialize the SQuAD dataset.
         
@@ -26,20 +28,22 @@ class SquadDataset(Dataset):
             dataset: Raw dataset containing questions and contexts
             tokenizer (PreTrainedTokenizer): Tokenizer for processing text
             max_length (int, optional): Maximum sequence length. Defaults to 384.
+            is_training (bool): Whether this is for training (affects answer selection)
         """
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.data_collator = DefaultDataCollator()
         
-        # Load dataset using Hugging Face datasets library
-        self.dataset = dataset
-        
-        # Preprocess with batched operations
-        self.dataset = self.dataset.map(
+        # Load dataset and preprocess
+        self.dataset = dataset.map(
             self.preprocess_function,
             batched=True,
-            remove_columns=self.dataset.column_names,
-            fn_kwargs={'tokenizer': tokenizer, 'max_length': max_length}
+            remove_columns=[col for col in dataset.column_names if col != "answers"],
+            fn_kwargs={
+                'tokenizer': tokenizer, 
+                'max_length': max_length,
+                'is_training': is_training
+            }
         )
 
     def __len__(self) -> int:
@@ -52,7 +56,8 @@ class SquadDataset(Dataset):
     def preprocess_function(
         examples: Dict[str, List[Any]],
         tokenizer: PreTrainedTokenizer,
-        max_length: int
+        max_length: int,
+        is_training: bool
     ) -> Dict[str, torch.Tensor]:
         """
         Batched preprocessing function with proper context truncation and answer mapping.
@@ -61,6 +66,7 @@ class SquadDataset(Dataset):
             examples (Dict[str, List[Any]]): Batch of examples to process
             tokenizer (PreTrainedTokenizer): Tokenizer for processing text
             max_length (int): Maximum sequence length
+            is_training (bool): Whether to select random answers for training
             
         Returns:
             Dict[str, torch.Tensor]: Processed examples with tokenized inputs and answer positions
@@ -86,16 +92,8 @@ class SquadDataset(Dataset):
 
         for i, offsets in enumerate(offset_mapping):
             answer = answers[i]
-            if not answer["text"]:
-                start_positions.append(0)
-                end_positions.append(0)
-                continue
-
-            # Use only first answer for training
-            start_char = answer["answer_start"][0]
-            end_char = start_char + len(answer["text"][0])
             sequence_ids = inputs.sequence_ids(i)
-
+            
             # Find context boundaries
             context_start = 0
             while context_start < len(sequence_ids) and sequence_ids[context_start] != 1:
@@ -105,9 +103,28 @@ class SquadDataset(Dataset):
             while context_end >= 0 and sequence_ids[context_end] != 1:
                 context_end -= 1
 
-            # Check if answer is fully inside the context
-            if (offsets[context_start][0] > end_char or 
-                offsets[context_end][1] < start_char):
+            # Initialize positions
+            start_char = end_char = 0
+            if answer["text"]:
+                # Select answer strategy
+                num_answers = len(answer["text"])
+                if is_training and num_answers > 1:
+                    # Random selection for training
+                    selected_idx = np.random.randint(0, num_answers)
+                else:
+                    # First answer for evaluation
+                    selected_idx = 0
+
+                start_char = answer["answer_start"][selected_idx]
+                end_char = start_char + len(answer["text"][selected_idx])
+
+            # Find token positions
+            if start_char == end_char == 0:  # No answer
+                start_positions.append(0)
+                end_positions.append(0)
+            elif (offsets[context_start][0] > end_char or 
+                  offsets[context_end][1] < start_char):
+                # Answer is outside the context
                 start_positions.append(0)
                 end_positions.append(0)
             else:
@@ -115,18 +132,17 @@ class SquadDataset(Dataset):
                 idx = context_start
                 while idx <= context_end and offsets[idx][0] <= start_char:
                     idx += 1
-                start_positions.append(idx - 1)
+                start_pos = idx - 1
 
                 # Find end token
                 idx = context_end
                 while idx >= context_start and offsets[idx][1] >= end_char:
                     idx -= 1
-                end_positions.append(idx + 1)
+                end_pos = idx + 1
+
+                start_positions.append(start_pos)
+                end_positions.append(end_pos)
 
         inputs["start_positions"] = torch.tensor(start_positions)
         inputs["end_positions"] = torch.tensor(end_positions)
-
-        # inputs["input_ids"] = torch.tensor(inputs["input_ids"])
-        # inputs["attention_mask"] = torch.tensor(inputs["attention_mask"])
         return inputs
-    
