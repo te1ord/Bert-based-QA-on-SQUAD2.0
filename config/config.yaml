@@ -32,6 +32,10 @@ wandb:
   entity: "anadea" 
   run_name: "bert-base-uncased-squad-v2" #distillbert-base-uncased-squad-v2
   API_TOKEN: "604b06640dbf9c0c8f0a0bfdb13eee93b84fd42b"
+
+inference:
+  model_name: "telord/bert-base-uncased-squad-v2"
+
   
 
 
