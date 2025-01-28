@@ -95,7 +95,7 @@ DistillBert perfomance is okey for a baseline for 2 epoch, but we probably wont 
 Bert base model scores are good enough to be compared to SOTA metrics. If evaluating by exact match we are on the 262 place on the [Papers with Code Benchmark SQuAD 2.0](https://paperswithcode.com/sota/question-answering-on-squad20). There are plenty of bert base models reaching up to 160 place, therefore as I told we expect to get better perfomance training it for more epochs. 
 
 ### Deployment
-- Interactive [demo](https://te1ord-bert-based-qa-on-squad2-0-appapp-dpzksc.streamlit.app/) implemented with Streamlit
+- Interactive [demo](https://te1ord-bert-based-qa-on-squad2-0-appapp-fg1jj9.streamlit.app/) implemented with Streamlit
 
 ![alt text](assets/streamlit_app.png)
 
