@@ -34,9 +34,9 @@ wandb:
   API_TOKEN: "604b06640dbf9c0c8f0a0bfdb13eee93b84fd42b"
 
 inference:
-  model_name: "telord/bert-base-uncased-squad-v2"
+  bert_model_name: "telord/bert-base-uncased-squad-v2"
+  distillbert_model_name: "telord/distillbert-base-uncased-squad-v2"
 
   
-
 
 

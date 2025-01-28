@@ -54,7 +54,7 @@ def load_model_and_tokenizer():
     
     # wandb.finish()
 
-    repo_name = config["inference"]["model_name"]  
+    repo_name = config["inference"]["bert_model_name"]  
     tokenizer = AutoTokenizer.from_pretrained(repo_name)
     model = AutoModelForQuestionAnswering.from_pretrained(repo_name).to(device)
     
@@ -75,7 +75,7 @@ def get_answer(model, tokenizer, question: str, context: str, device: torch.devi
     
     # Move inputs to device
     inputs = {k: v.to(device) for k, v in inputs.items()}
-    print(inputs)
+    # print(inputs)
     
 
     # Get predictions

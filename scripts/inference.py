@@ -26,6 +26,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
     
 def get_predictions(
     model: AutoModelForQuestionAnswering,
+    architecrue:str,
     dataset: SquadDataset,
     device: torch.device
 ) -> Tuple[List[str], List[List[str]]]:
@@ -50,10 +51,15 @@ def get_predictions(
             # Get input tensors
             input_ids = torch.tensor(dataset[i]["input_ids"]).unsqueeze(0).to(device)
             attention_mask = torch.tensor(dataset[i]["attention_mask"]).unsqueeze(0).to(device)
-            token_type_ids = torch.tensor(dataset[i]["token_type_ids"]).unsqueeze(0).to(device)            
 
-            # Get model predictions
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+            if architecrue == 'bert':
+                token_type_ids = torch.tensor(dataset[i]["token_type_ids"]).unsqueeze(0).to(device)            
+                # Get model predictions for bert
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+            else:
+                # Get model predictions for distillbert
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+
             start_logits = outputs.start_logits
             end_logits = outputs.end_logits
             
@@ -112,7 +118,7 @@ def evaluate_predictions(
         "f1": 100 * float(np.mean(f1_scores))
     } 
 
-def main() -> None:
+def main(architecrue:str) -> None:
     """
     Main inference function that:
     - Sets up device
@@ -140,8 +146,7 @@ def main() -> None:
     )
     config = load_config(config_path)
     
-    
-    model_name = config["inference"]["model_name"]
+    model_name = config["inference"][f"{architecrue}_model_name"]
     # Load tokenizer and model
     print("Loading tokenizer and model...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -151,14 +156,14 @@ def main() -> None:
     print("Loading validation dataset...")
     squad = load_dataset(config["data"]["dataset_path"])
     val_dataset = SquadDataset(
-        squad["validation"],#.select(range(100)),  # Sample 500 examples from validation dataset
+        squad["validation"],#.select(range(500)),  # Sample 500 examples from validation dataset
         tokenizer,
         config["training"]["max_length"]
     )
     
     # Get predictions
     print("Running inference...")
-    predictions, ground_truths = get_predictions(model, val_dataset, device)
+    predictions, ground_truths = get_predictions(model, architecrue, val_dataset, device)
     
     # Compute metrics
     print("Computing metrics...")
@@ -179,4 +184,5 @@ def main() -> None:
     # wandb.finish()
 
 if __name__ == "__main__":
-    main() 
+    # main('distillbert') 
+    main('bert') 
