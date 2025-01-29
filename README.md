@@ -16,9 +16,8 @@ The dataset contains:
 Challenges include handling answer ambiguity, long contexts (up to 800 tokens), and distinguishing similar but incorrect answers.
 
 **Relevant Papers:** 
-* [SQUAD 1.1](https://arxiv.org/pdf/1806.03822.pdf)
-* [SQUAD 2.0](https://arxiv.org/pdf/1606.05250.pdf)
-
+* [SQUAD 1.1](https://arxiv.org/pdf/1606.05250.pdf)
+* [SQUAD 2.0](https://arxiv.org/pdf/1806.03822.pdf)
 
 ### SOTA Approaches
 [Question Answering on SQuAD2.0 Benchmark](https://paperswithcode.com/sota/question-answering-on-squad20)
@@ -80,11 +79,11 @@ I set up full set validation with multiple answers comparison to get accurate sc
 - **Exact Match (EM):** Strict character-level match
 - **F1-score:** Token-level overlap between prediction and gold answers
 
-Metrics calculated using functions from [official SQuAD evaluation script](https://github.com/deepset-ai/deepset-eval/blob/master/deepset_eval/squad_metrics.py)
+Metrics calculated using functions from [official SQuAD evaluation script](https://github.com/huggingface/transformers/blob/main/src/transformers/data/metrics/squad_metrics.py)
 
-Baseline DistillBert scores (used first answer from available, therefore might expect the same or higher exact match and around the same F1 score (can be both higher or lower) in case of multiple answers):
+Baseline DistillBert :
 - Exact Match: 56.89
-- F1 Score: 62.02
+- F1 Score: 60.82
 
 Bert scores:
 - Exact Match: 67.51
